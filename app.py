@@ -1,46 +1,56 @@
-from langchain.chains.summarize import load_summarize_chain
-from langchain.document_loaders import PyPDFLoader
-from langchain import OpenAI
 import streamlit as st
-import tempfile
 import os
+from PyPDF2 import PdfReader
 from dotenv import load_dotenv
+import openai
 
+# Load environment variables
 load_dotenv()
+openai_api_key = os.getenv("OPENAI_API_KEY")
+client = openai.OpenAI(api_key=openai_api_key)
 
-os.environ["OPENAI_API_KEY"]=os.getenv("OPENAI_API_KEY")
+st.set_page_config(page_title="PDF Summarizer", layout="centered")
+st.title("📄 Notebook LLM Summarizer")
 
-llm = OpenAI(temperature=0)
+def extract_text_from_pdf(file):
+    reader = PdfReader(file)
+    text = ""
+    for page in reader.pages:
+        page_text = page.extract_text()
+        if page_text:
+            text += page_text
+    return text
 
-def summarize_pdfs_from_folder(pdfs_folder):
-    summaries = []
-    for pdf_file in pdfs_folder:
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_path = temp_file.name
-            temp_file.write(pdf_file.read())
-        
-        loader = PyPDFLoader(temp_path)
-        docs = loader.load_and_split()
-        chain = load_summarize_chain(llm, chain_type="map_reduce")
-        summary = chain.run(docs)
-        summaries.append(summary)
+def summarize_text_with_openai(text):
+    prompt = f"Summarize the following PDF content in clear, concise bullet points:\n\n{text}"
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # or "gpt-3.5-turbo"
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.5,
+            max_tokens=500,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
 
-        # Delete the temporary file
-        os.remove(temp_path)
-    
-    return summaries
+uploaded_file = st.file_uploader("Upload your PDF file", type="pdf")
 
-# Streamlit App
-st.title("PDF Summarizer App")
+if uploaded_file is not None:
+    st.success("✅ PDF uploaded successfully!")
+    with st.spinner("🔍 Extracting text..."):
+        raw_text = extract_text_from_pdf(uploaded_file)
 
-# Allow user to upload PDF files
-pdf_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
+    if raw_text:
+        st.subheader("📑 Extracted Text (Preview)")
+        st.text_area("PDF Text", raw_text[:1000] + "...", height=200)
 
-if pdf_files:
-    # Generate summaries when the "Generate Summary" button is clicked
-    if st.button("Generate Summary"):
-        st.write("Summary : ")
-        summaries = summarize_pdfs_from_folder(pdf_files)
-        for i, summary in enumerate(summaries):
-            # st.write(f"Summary for PDF {i+1}:")
-            st.write(summary)
+        if st.button("📝 Generate Summary"):
+            with st.spinner("Generating summary using OpenAI..."):
+                summary = summarize_text_with_openai(raw_text)
+                st.subheader("📌 Summary")
+                st.write(summary)
+    else:
+        st.error("❌ Failed to extract any text from the PDF.")
