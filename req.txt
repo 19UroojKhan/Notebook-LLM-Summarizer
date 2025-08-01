@@ -1,3 +1,2 @@
-streamlit ==1.32.2 
-PyPDF2==3.0.1 
-anthropic == 0.20.0 
+pip install streamlit openai PyPDF2 python-dotenv
+
